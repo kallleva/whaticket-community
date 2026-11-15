@@ -80,6 +80,7 @@ const UserModal = ({ open, onClose, userId }) => {
 		name: "",
 		email: "",
 		password: "",
+		number: "",
 		profile: "user"
 	};
 
@@ -201,6 +202,17 @@ const UserModal = ({ open, onClose, userId }) => {
 										name="email"
 										error={touched.email && Boolean(errors.email)}
 										helperText={touched.email && errors.email}
+										variant="outlined"
+										margin="dense"
+										fullWidth
+									/>
+								</div>
+								<div className={classes.multFieldLine}>
+									<Field
+										as={TextField}
+										label={i18n.t("userModal.form.number")}
+										name="number"
+										placeholder="5511999999999"
 										variant="outlined"
 										margin="dense"
 										fullWidth

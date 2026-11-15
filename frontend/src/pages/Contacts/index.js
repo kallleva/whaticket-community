@@ -103,6 +103,8 @@ const Contacts = () => {
   const [deletingContact, setDeletingContact] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [ghostPreview, setGhostPreview] = useState(null);
+  const [ghostConfirmOpen, setGhostConfirmOpen] = useState(false);
 
   useEffect(() => {
     dispatch({ type: "RESET" });
@@ -203,6 +205,30 @@ const Contacts = () => {
     }
   };
 
+  const handleCheckGhostContacts = async () => {
+    try {
+      const { data } = await api.get("/contacts/ghosts");
+      if (data.count === 0) {
+        toast.success("Nenhum contato fantasma encontrado.");
+        return;
+      }
+      setGhostPreview(data);
+      setGhostConfirmOpen(true);
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  const handleDeleteGhostContacts = async () => {
+    try {
+      const { data } = await api.delete("/contacts/ghosts");
+      toast.success(`${data.deletedCount} contatos fantasma removidos.`);
+      history.go(0);
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
   const loadMore = () => {
     setPageNumber((prevState) => prevState + 1);
   };
@@ -243,6 +269,22 @@ const Contacts = () => {
           ? `${i18n.t("contacts.confirmationModal.deleteMessage")}`
           : `${i18n.t("contacts.confirmationModal.importMessage")}`}
       </ConfirmationModal>
+      <ConfirmationModal
+        title={
+          ghostPreview
+            ? `Remover ${ghostPreview.count} contatos fantasma?`
+            : "Remover contatos fantasma?"
+        }
+        open={ghostConfirmOpen}
+        onClose={setGhostConfirmOpen}
+        onConfirm={handleDeleteGhostContacts}
+      >
+        Esses números vieram de identificadores internos do WhatsApp (não são
+        telefones reais), nunca tiveram ticket ou mensagem, e não têm nome
+        salvo. Exemplo:{" "}
+        {ghostPreview?.sample?.[0]?.number || ""}. Essa ação não pode ser
+        desfeita.
+      </ConfirmationModal>
       <MainHeader>
         <Title>{i18n.t("contacts.title")}</Title>
         <MainHeaderButtonsWrapper>
@@ -266,6 +308,15 @@ const Contacts = () => {
           >
             {i18n.t("contacts.buttons.import")}
           </Button>
+          {user?.profile === "admin" && (
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={handleCheckGhostContacts}
+            >
+              Limpar Fantasmas
+            </Button>
+          )}
           <Button
             variant="contained"
             color="primary"

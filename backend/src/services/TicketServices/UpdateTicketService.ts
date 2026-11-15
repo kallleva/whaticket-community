@@ -1,6 +1,7 @@
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
+import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
@@ -8,7 +9,7 @@ import ShowTicketService from "./ShowTicketService";
 
 interface TicketData {
   status?: string;
-  userId?: number;
+  userId?: number | null;
   queueId?: number;
   whatsappId?: number;
 }
@@ -57,6 +58,16 @@ const UpdateTicketService = async ({
   }
 
   await ticket.reload();
+
+  // "Carteira de cliente": a primeira vez que um vendedor é atribuído a
+  // este contato (de qualquer forma — round robin, menu de fila, funil,
+  // transferência manual ou auto-assign ao responder), ele passa a ser o
+  // dono do contato. Isso é lido depois em FindOrCreateTicketService pra
+  // rotear mensagens futuras direto pra ele, sem round robin, mesmo após o
+  // ticket ser resolvido.
+  if (userId && !ticket.contact.ownerId) {
+    await Contact.update({ ownerId: userId }, { where: { id: ticket.contact.id } });
+  }
 
   const io = getIO();
 

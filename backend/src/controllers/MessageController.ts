@@ -6,6 +6,7 @@ import Message from "../models/Message";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
+import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
@@ -40,7 +41,25 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const { body, quotedMsg }: MessageData = req.body;
   const medias = req.files as Express.Multer.File[];
 
-  const ticket = await ShowTicketService(ticketId);
+  let ticket = await ShowTicketService(ticketId);
+
+  // Humano respondeu manualmente pelo painel: assume o ticket, o que já
+  // pausa o funil/agente de IA automaticamente (ambos só atuam enquanto
+  // `!ticket.userId`, ver handleWhatsappEvents.ts).
+  if (!ticket.userId) {
+    await UpdateTicketService({
+      ticketData: {
+        userId: +req.user.id,
+        status: "open",
+        // UpdateTicketService sempre grava os 3 campos juntos — sem
+        // reenviar queueId aqui, um ticket já numa fila (pending, sem
+        // usuário) perderia essa fila ao ser assumido manualmente.
+        queueId: ticket.queueId
+      },
+      ticketId
+    });
+    ticket = await ShowTicketService(ticketId);
+  }
 
   SetTicketMessagesAsRead(ticket);
 

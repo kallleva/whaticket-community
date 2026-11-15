@@ -1,5 +1,5 @@
 _writeFrontendEnvVars() {
-    ENV_JSON="$(jq --compact-output --null-input 'env | with_entries(select(.key | startswith("REACT_APP_")))')"
+    ENV_JSON="$(jq --compact-output --null-input 'env | with_entries(select(.key | startswith("REACT_APP_") or startswith("VITE_")))')"
     ENV_JSON_ESCAPED="$(printf "%s" "${ENV_JSON}" | sed -e 's/[\&/]/\\&/g')"
     sed -i "s/<noscript id=\"env-insertion-point\"><\/noscript>/<script>var ENV=${ENV_JSON_ESCAPED}<\/script>/g" ${PUBLIC_HTML}index.html
 }
@@ -13,6 +13,15 @@ _addSslConfig() {
     SSL_CERTIFICATE_KEY=/etc/nginx/ssl/${1}/privkey.pem;
     FILE_CONF=/etc/nginx/sites.d/${1}.conf
     FILE_SSL_CONF=/etc/nginx/conf.d/00-ssl-redirect.conf;
+
+    # Idempotente: este script roda a cada boot do container. Sem essa
+    # guarda, reiniciar o container (sem rebuild da imagem) acrescenta
+    # "listen 80;"/ssl_certificate de novo a cada vez, duplicando a
+    # diretiva e derrubando o nginx ("duplicate listen 0.0.0.0:80").
+    if grep -qE '^(listen |ssl_certificate )' ${FILE_CONF} 2>/dev/null; then
+        echo "ssl/listen config já presente em ${FILE_CONF}, pulando"
+        return
+    fi
 
     if [ -f ${SSL_CERTIFICATE} ] && [ -f ${SSL_CERTIFICATE_KEY} ]; then
         echo "saving ssl config in ${FILE_CONF}"

@@ -207,6 +207,7 @@ const messages = {
           name: "Nome",
           email: "Email",
           password: "Senha",
+          number: "Celular (para notificações)",
           profile: "Perfil",
           whatsapp: "Conexão Padrão",
         },

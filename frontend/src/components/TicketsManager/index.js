@@ -354,9 +354,16 @@ const TicketsManager = () => {
         </Paper>
       </TabPanel>
       <TabPanel value={tab} name="closed" className={classes.ticketsWrapper}>
+        {
+          // Antes era sempre showAll=true: todo vendedor via TODOS os
+          // clientes resolvidos de todo mundo misturados, sem jeito de ver
+          // só os seus. Agora usa o mesmo switch "Mostrar todos" da aba
+          // "Em Atendimento" — por padrão mostra só os clientes resolvidos
+          // deste vendedor (carteira dele), sem esconder nenhum.
+        }
         <TicketsList
           status="closed"
-          showAll={true}
+          showAll={showAllTickets}
           selectedQueueIds={selectedQueueIds}
         />
       </TabPanel>

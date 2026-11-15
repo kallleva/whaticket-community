@@ -362,6 +362,7 @@ const getGroupSubject = async (
 
 const rememberContact = (sessionId: number, contact: ContactPayload): void => {
   if (contact.isGroup || !contact.number) return;
+  if (!/^\d{8,15}$/.test(contact.number)) return;
 
   const knownContacts = contactsBySession.get(sessionId) || new Map();
 

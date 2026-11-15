@@ -7,12 +7,19 @@ import CreateContactService from "../services/ContactServices/CreateContactServi
 import ShowContactService from "../services/ContactServices/ShowContactService";
 import UpdateContactService from "../services/ContactServices/UpdateContactService";
 import DeleteContactService from "../services/ContactServices/DeleteContactService";
+import CreateContactNoteService from "../services/ContactServices/CreateContactNoteService";
+import ListContactNotesService from "../services/ContactServices/ListContactNotesService";
+import DeleteContactNoteService from "../services/ContactServices/DeleteContactNoteService";
 
 import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import AppError from "../errors/AppError";
 import GetContactService from "../services/ContactServices/GetContactService";
+import {
+  previewGhostContacts,
+  deleteGhostContacts
+} from "../services/ContactServices/CleanupGhostContactsService";
 
 type IndexQuery = {
   searchParam: string;
@@ -33,6 +40,11 @@ interface ContactData {
   number: string;
   email?: string;
   extraInfo?: ExtraInfo[];
+  address?: string;
+  birthDate?: string;
+  document?: string;
+  leadStatus?: string;
+  pipelineStage?: string;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -162,4 +174,84 @@ export const remove = async (
   });
 
   return res.status(200).json({ message: "Contact deleted" });
+};
+
+export const listNotes = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { contactId } = req.params;
+
+  const notes = await ListContactNotesService(Number(contactId));
+
+  return res.status(200).json(notes);
+};
+
+export const storeNote = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { contactId } = req.params;
+  const { note } = req.body;
+
+  const schema = Yup.object().shape({
+    note: Yup.string().required()
+  });
+
+  try {
+    await schema.validate({ note });
+  } catch (err) {
+    throw new AppError(err.message);
+  }
+
+  const contactNote = await CreateContactNoteService({
+    contactId: Number(contactId),
+    userId: Number(req.user.id),
+    note
+  });
+
+  return res.status(200).json(contactNote);
+};
+
+export const ghostsPreview = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  if (req.user.profile !== "admin") {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+
+  const result = await previewGhostContacts();
+
+  return res.status(200).json(result);
+};
+
+export const ghostsDelete = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  if (req.user.profile !== "admin") {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+
+  const deletedCount = await deleteGhostContacts();
+
+  return res.status(200).json({ deletedCount });
+};
+
+export const removeNote = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { noteId } = req.params;
+
+  await DeleteContactNoteService({
+    noteId: Number(noteId),
+    requestUser: {
+      id: Number(req.user.id),
+      profile: req.user.profile
+    }
+  });
+
+  return res.status(200).json({ message: "Note deleted" });
 };

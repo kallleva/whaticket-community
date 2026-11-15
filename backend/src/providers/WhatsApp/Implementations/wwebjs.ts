@@ -410,14 +410,24 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   const wbot = getWbot(sessionId);
   const contacts = await wbot.getContacts();
 
-  return contacts.map(contact => ({
-    id: contact.id.user,
-    name: contact.name || contact.pushname,
-    pushname: contact.pushname,
-    number: contact.id.user,
-    profilePicUrl: undefined,
-    isGroup: contact.isGroup
-  }));
+  return contacts
+    .filter(
+      contact =>
+        !contact.isGroup &&
+        !contact.isMe &&
+        contact.isUser &&
+        contact.isWAContact &&
+        contact.id.server === "c.us" &&
+        /^\d{8,15}$/.test(contact.id.user)
+    )
+    .map(contact => ({
+      id: contact.id.user,
+      name: contact.name || contact.pushname,
+      pushname: contact.pushname,
+      number: contact.id.user,
+      profilePicUrl: undefined,
+      isGroup: contact.isGroup
+    }));
 };
 
 const logout = async (sessionId: number): Promise<void> => {

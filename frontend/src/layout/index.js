@@ -16,6 +16,7 @@ import Brightness7Icon from "@material-ui/icons/Brightness7";
 
 import MainListItems from "./MainListItems";
 import NotificationsPopOver from "../components/NotificationsPopOver";
+import ReminderBell from "../components/ReminderBell";
 import SidebarUserMenu from "../components/SidebarUserMenu";
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
@@ -186,6 +187,7 @@ const LoggedInLayout = ({ children }) => {
             {darkMode ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
 
+          {user.id && <ReminderBell />}
           {user.id && <NotificationsPopOver />}
         </Toolbar>
       </AppBar>

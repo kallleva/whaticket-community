@@ -8,6 +8,7 @@ interface UserData {
   email?: string;
   password?: string;
   name?: string;
+  number?: string;
   profile?: string;
   queueIds?: number[];
   whatsappId?: number;
@@ -43,6 +44,7 @@ const UpdateUserService = async ({
     password,
     profile,
     name,
+    number,
     queueIds = [],
     whatsappId
   } = userData;
@@ -58,6 +60,7 @@ const UpdateUserService = async ({
     password,
     profile,
     name,
+    number,
     whatsappId: whatsappId ? whatsappId : null
   });
 

@@ -6,21 +6,33 @@ import * as Sentry from "@sentry/node";
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
 import { debounce } from "../helpers/Debounce";
+import { bufferIncomingFragment } from "../helpers/MessageFragmentBuffer";
+import { withLock } from "../helpers/AsyncLock";
 import formatBody from "../helpers/Mustache";
 
 import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
+import Whatsapp from "../models/Whatsapp";
 import Message from "../models/Message";
 
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
+import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
-import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
+import assignTicketToQueue from "../services/FlowServices/AssignTicketToQueueHelper";
+import {
+  startFlow,
+  advanceFlow,
+  getWaitingNodeType
+} from "../services/FlowServices/AdvanceFlowService";
+import EnqueueAiAgentTurnService from "../services/AgentServices/EnqueueAiAgentTurnService";
 
 import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
+
+const FLOW_QUESTION_BUFFER_MS = 12000;
 
 const writeFileAsync = promisify(writeFile);
 
@@ -153,10 +165,7 @@ const handleQueueLogic = async (
   const { queues, greetingMessage } = await ShowWhatsAppService(whatsappId);
 
   if (queues.length === 1) {
-    await UpdateTicketService({
-      ticketData: { queueId: queues[0].id },
-      ticketId: ticket.id
-    });
+    await assignTicketToQueue(ticket, queues[0].id);
     return;
   }
 
@@ -164,10 +173,7 @@ const handleQueueLogic = async (
   const choosenQueue = queues[+selectedOption - 1];
 
   if (choosenQueue) {
-    await UpdateTicketService({
-      ticketData: { queueId: choosenQueue.id },
-      ticketId: ticket.id
-    });
+    await assignTicketToQueue(ticket, choosenQueue.id);
 
     const body = formatBody(
       `\u200e${choosenQueue.greetingMessage}`,
@@ -214,6 +220,46 @@ const handleQueueLogic = async (
   }
 };
 
+// Decide se a mensagem deve ser tratada pelo motor de funil ou pelo agente
+// de IA, ANTES do fallback legado (handleQueueLogic). Conexões sem nenhum
+// Flow vinculado (whatsapp.flowId null) e tickets sem funil/IA em andamento
+// caem em "skip" e seguem exatamente como hoje — sem regressão.
+const processIncomingMessageForFlow = async (
+  ticket: Ticket,
+  whatsapp: Whatsapp,
+  body: string
+): Promise<"handled" | "skip"> => {
+  if (ticket.aiAgentId) {
+    EnqueueAiAgentTurnService(ticket.id, body);
+    return "handled";
+  }
+
+  if (ticket.flowId && ticket.flowNodeId) {
+    const waitingNodeType = await getWaitingNodeType(ticket);
+
+    if (waitingNodeType === "question") {
+      // Pergunta aberta: junta fragmentos enviados em sequência antes de
+      // processar a resposta contra o node atual (ver MessageFragmentBuffer).
+      bufferIncomingFragment(ticket.id, body, FLOW_QUESTION_BUFFER_MS, async joinedBody => {
+        const freshTicket = await ShowTicketService(ticket.id);
+        await advanceFlow(freshTicket, joinedBody);
+      });
+    } else {
+      // Menu: responder na hora é melhor UX do que esperar o buffer.
+      await advanceFlow(ticket, body);
+    }
+
+    return "handled";
+  }
+
+  if (whatsapp.flowId && !ticket.flowId) {
+    await startFlow(ticket, whatsapp.flowId);
+    return "handled";
+  }
+
+  return "skip";
+};
+
 export const handleMessage = async (
   messagePayload: MessagePayload,
   contactPayload: ContactPayload,
@@ -251,62 +297,80 @@ export const handleMessage = async (
       return;
     }
 
-    const ticket = await FindOrCreateTicketService(
-      contact,
-      contextPayload.whatsappId,
-      contextPayload.unreadMessages,
-      groupContact
-    );
+    // Serializa por contato+conexão: duas mensagens quase simultâneas do
+    // mesmo cliente (comum quando ele manda várias mensagens em sequência)
+    // não devem conseguir criar dois tickets, nem rodar o motor de
+    // funil/fila duas vezes em paralelo antes do primeiro
+    // `ticket.update`/`Ticket.create` persistir — por isso todo o trecho
+    // que decide/cria o ticket e decide funil/fila fica dentro do lock, não
+    // só a criação do ticket isoladamente.
+    const ticketLockKey = `ticket-${groupContact ? groupContact.id : contact.id}-${contextPayload.whatsappId}`;
 
-    const messageData: any = {
-      id: processedMessage.id,
-      ticketId: ticket.id,
-      contactId: processedMessage.fromMe ? undefined : contact.id,
-      body: processedMessage.body,
-      fromMe: processedMessage.fromMe,
-      read: processedMessage.fromMe,
-      mediaType: processedMessage.type,
-      quotedMsgId: processedMessage.quotedMsgId,
-      ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
-    };
-
-    if (mediaPayload && processedMessage.hasMedia) {
-      const filename = await saveMediaFile(mediaPayload);
-      messageData.mediaUrl = filename;
-      messageData.body = processedMessage.body || filename;
-      const [mediaType] = mediaPayload.mimetype.split("/");
-      messageData.mediaType = mediaType;
-    }
-
-    let lastMessageText = "";
-    if (processedMessage.type === "location") {
-      lastMessageText = processedMessage.body.includes("Localization")
-        ? processedMessage.body
-        : "Localization";
-    } else {
-      lastMessageText = processedMessage.body || mediaPayload?.filename || "";
-    }
-
-    await ticket.update({ lastMessage: lastMessageText });
-
-    await CreateMessageService({ messageData });
-
-    await processVcardMessage(processedMessage);
-
-    if (
-      !ticket.queue &&
-      !contextPayload.groupContact &&
-      !processedMessage.fromMe &&
-      !ticket.userId &&
-      whatsapp.queues.length >= 1
-    ) {
-      await handleQueueLogic(
+    await withLock(ticketLockKey, async () => {
+      const ticket = await FindOrCreateTicketService(
+        contact,
         contextPayload.whatsappId,
-        processedMessage.body,
-        ticket,
-        contactPayload
+        contextPayload.unreadMessages,
+        groupContact
       );
-    }
+
+      const messageData: any = {
+        id: processedMessage.id,
+        ticketId: ticket.id,
+        contactId: processedMessage.fromMe ? undefined : contact.id,
+        body: processedMessage.body,
+        fromMe: processedMessage.fromMe,
+        read: processedMessage.fromMe,
+        mediaType: processedMessage.type,
+        quotedMsgId: processedMessage.quotedMsgId,
+        ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
+      };
+
+      if (mediaPayload && processedMessage.hasMedia) {
+        const filename = await saveMediaFile(mediaPayload);
+        messageData.mediaUrl = filename;
+        messageData.body = processedMessage.body || filename;
+        const [mediaType] = mediaPayload.mimetype.split("/");
+        messageData.mediaType = mediaType;
+      }
+
+      let lastMessageText = "";
+      if (processedMessage.type === "location") {
+        lastMessageText = processedMessage.body.includes("Localization")
+          ? processedMessage.body
+          : "Localization";
+      } else {
+        lastMessageText = processedMessage.body || mediaPayload?.filename || "";
+      }
+
+      await ticket.update({ lastMessage: lastMessageText });
+
+      await CreateMessageService({ messageData });
+
+      await processVcardMessage(processedMessage);
+
+      if (
+        !ticket.queue &&
+        !contextPayload.groupContact &&
+        !processedMessage.fromMe &&
+        !ticket.userId
+      ) {
+        const outcome = await processIncomingMessageForFlow(
+          ticket,
+          whatsapp,
+          processedMessage.body
+        );
+
+        if (outcome === "skip" && whatsapp.queues.length >= 1) {
+          await handleQueueLogic(
+            contextPayload.whatsappId,
+            processedMessage.body,
+            ticket,
+            contactPayload
+          );
+        }
+      }
+    });
   } catch (err) {
     Sentry.captureException(err);
     logger.error({

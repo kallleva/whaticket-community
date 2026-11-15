@@ -16,6 +16,10 @@ import {
 	TextField,
 	Switch,
 	FormControlLabel,
+	FormControl,
+	InputLabel,
+	Select,
+	MenuItem,
 } from "@material-ui/core";
 
 import api from "../../services/api";
@@ -67,6 +71,15 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	};
 	const [whatsApp, setWhatsApp] = useState(initialState);
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
+	const [selectedFlowId, setSelectedFlowId] = useState("");
+	const [flows, setFlows] = useState([]);
+
+	useEffect(() => {
+		api
+			.get("/flows")
+			.then(({ data }) => setFlows(data))
+			.catch(toastError);
+	}, []);
 
 	useEffect(() => {
 		const fetchSession = async () => {
@@ -78,6 +91,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 
 				const whatsQueueIds = data.queues?.map(queue => queue.id);
 				setSelectedQueueIds(whatsQueueIds);
+				setSelectedFlowId(data.flowId || "");
 			} catch (err) {
 				toastError(err);
 			}
@@ -86,7 +100,11 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	}, [whatsAppId]);
 
 	const handleSaveWhatsApp = async values => {
-		const whatsappData = { ...values, queueIds: selectedQueueIds };
+		const whatsappData = {
+			...values,
+			queueIds: selectedQueueIds,
+			flowId: selectedFlowId || null,
+		};
 
 		try {
 			if (whatsAppId) {
@@ -200,6 +218,23 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 									selectedQueueIds={selectedQueueIds}
 									onChange={selectedIds => setSelectedQueueIds(selectedIds)}
 								/>
+								<FormControl variant="outlined" margin="dense" fullWidth>
+									<InputLabel>Funil (opcional)</InputLabel>
+									<Select
+										value={selectedFlowId}
+										onChange={e => setSelectedFlowId(e.target.value)}
+										label="Funil (opcional)"
+									>
+										<MenuItem value="">
+											<em>Nenhum (usar menu de filas padrão)</em>
+										</MenuItem>
+										{flows.map(flow => (
+											<MenuItem key={flow.id} value={flow.id}>
+												{flow.name}
+											</MenuItem>
+										))}
+									</Select>
+								</FormControl>
 							</DialogContent>
 							<DialogActions>
 								<Button

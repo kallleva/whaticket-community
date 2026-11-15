@@ -9,10 +9,14 @@ import {
   BelongsTo,
   HasMany,
   AutoIncrement,
-  Default
+  Default,
+  DataType
 } from "sequelize-typescript";
 
+import Agent from "./Agent";
 import Contact from "./Contact";
+import Flow from "./Flow";
+import { jsonColumnAccessors } from "../helpers/JsonColumn";
 import Message from "./Message";
 import Queue from "./Queue";
 import User from "./User";
@@ -71,6 +75,34 @@ class Ticket extends Model<Ticket> {
 
   @BelongsTo(() => Queue)
   queue: Queue;
+
+  @ForeignKey(() => Flow)
+  @Column
+  flowId: number;
+
+  @BelongsTo(() => Flow)
+  flow: Flow;
+
+  @Column
+  flowNodeId: string;
+
+  @Default({})
+  @Column({ type: DataType.JSON, ...jsonColumnAccessors("flowVariables") })
+  flowVariables: Record<string, string>;
+
+  @Default([])
+  @Column({ type: DataType.JSON, ...jsonColumnAccessors("flowCallStack") })
+  flowCallStack: { flowId: number; returnNodeId: string | null }[];
+
+  @Column
+  flowResumeAt: Date;
+
+  @ForeignKey(() => Agent)
+  @Column
+  aiAgentId: number;
+
+  @BelongsTo(() => Agent)
+  aiAgent: Agent;
 
   @HasMany(() => Message)
   messages: Message[];

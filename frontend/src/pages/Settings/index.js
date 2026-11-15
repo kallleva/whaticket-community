@@ -41,12 +41,17 @@ const Settings = () => {
 	const classes = useStyles();
 
 	const [settings, setSettings] = useState([]);
+	const [birthdayTemplate, setBirthdayTemplate] = useState("");
 
 	useEffect(() => {
 		const fetchSession = async () => {
 			try {
 				const { data } = await api.get("/settings");
 				setSettings(data);
+				const template = data.find(s => s.key === "birthdayMessageTemplate");
+				if (template) {
+					setBirthdayTemplate(template.value);
+				}
 			} catch (err) {
 				toastError(err);
 			}
@@ -92,6 +97,17 @@ const Settings = () => {
 		return value;
 	};
 
+	const handleSaveBirthdayTemplate = async () => {
+		try {
+			await api.put("/settings/birthdayMessageTemplate", {
+				value: birthdayTemplate,
+			});
+			toast.success(i18n.t("settings.success"));
+		} catch (err) {
+			toastError(err);
+		}
+	};
+
 	return (
 		<div className={classes.root}>
 			<Container className={classes.container} maxWidth="sm">
@@ -133,6 +149,23 @@ const Settings = () => {
 						variant="outlined"
 						fullWidth
 						value={settings && settings.length > 0 && getSettingValue("userApiToken")}
+					/>
+				</Paper>
+
+				<Paper className={classes.paper} style={{ flexDirection: "column", alignItems: "stretch" }}>
+					<Typography variant="body1" gutterBottom>
+						Mensagem de Aniversário (use {"{{name}}"} para o nome do cliente)
+					</Typography>
+					<TextField
+						id="birthday-template-setting"
+						multiline
+						rows={3}
+						margin="dense"
+						variant="outlined"
+						fullWidth
+						value={birthdayTemplate}
+						onChange={e => setBirthdayTemplate(e.target.value)}
+						onBlur={handleSaveBirthdayTemplate}
 					/>
 				</Paper>
 

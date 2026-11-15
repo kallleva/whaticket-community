@@ -16,6 +16,12 @@ import PeopleAltOutlinedIcon from "@material-ui/icons/PeopleAltOutlined";
 import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
 import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
+import EventOutlinedIcon from "@material-ui/icons/EventOutlined";
+import CakeOutlinedIcon from "@material-ui/icons/CakeOutlined";
+import DeviceHubOutlinedIcon from "@material-ui/icons/DeviceHubOutlined";
+import EmojiObjectsOutlinedIcon from "@material-ui/icons/EmojiObjectsOutlined";
+import DriveEtaOutlinedIcon from "@material-ui/icons/DriveEtaOutlined";
+import DirectionsCarOutlinedIcon from "@material-ui/icons/DirectionsCarOutlined";
 
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
@@ -198,6 +204,24 @@ const MainListItems = (props) => {
         icon={<QuestionAnswerOutlinedIcon />}
         collapsed={collapsed}
       />
+      <ListItemLink
+        to="/reminders"
+        primary="Agenda"
+        icon={<EventOutlinedIcon />}
+        collapsed={collapsed}
+      />
+      <ListItemLink
+        to="/test-drives"
+        primary="Test-Drive"
+        icon={<DriveEtaOutlinedIcon />}
+        collapsed={collapsed}
+      />
+      <ListItemLink
+        to="/vehicles"
+        primary="Veículos"
+        icon={<DirectionsCarOutlinedIcon />}
+        collapsed={collapsed}
+      />
       <Can
         role={user.profile}
         perform="drawer-admin-items:view"
@@ -224,6 +248,30 @@ const MainListItems = (props) => {
             <ListItemLink
               to="/settings"
               primary={i18n.t("mainDrawer.listItems.settings")}
+              icon={<SettingsOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/birthdays"
+              primary="Aniversários"
+              icon={<CakeOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/flows"
+              primary="Funis"
+              icon={<DeviceHubOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/agents"
+              primary="Agentes de IA"
+              icon={<EmojiObjectsOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/ai-settings"
+              primary="Configuração de IA"
               icon={<SettingsOutlinedIcon />}
               collapsed={collapsed}
             />

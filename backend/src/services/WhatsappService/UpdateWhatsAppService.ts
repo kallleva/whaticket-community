@@ -14,6 +14,7 @@ interface WhatsappData {
   greetingMessage?: string;
   farewellMessage?: string;
   queueIds?: number[];
+  flowId?: number | null;
 }
 
 interface Request {
@@ -43,7 +44,8 @@ const UpdateWhatsAppService = async ({
     session,
     greetingMessage,
     farewellMessage,
-    queueIds = []
+    queueIds = [],
+    flowId
   } = whatsappData;
 
   try {
@@ -75,7 +77,12 @@ const UpdateWhatsAppService = async ({
     session,
     greetingMessage,
     farewellMessage,
-    isDefault
+    isDefault,
+    // flowId só é alterado quando explicitamente enviado — do contrário o
+    // Sequelize grava NULL para qualquer campo ausente do payload (ex.: a
+    // chamada de reconexão de sessão só envia `{ session: "" }`), o que
+    // desvincularia o funil silenciosamente a cada reconexão da conexão.
+    flowId: flowId !== undefined ? flowId : whatsapp.flowId
   });
 
   await AssociateWhatsappQueue(whatsapp, queueIds);

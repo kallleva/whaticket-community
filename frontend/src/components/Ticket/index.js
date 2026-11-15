@@ -5,7 +5,9 @@ import { toast } from "react-toastify";
 import openSocket from "../../services/socket-io";
 import clsx from "clsx";
 
-import { Paper, makeStyles } from "@material-ui/core";
+import { Paper, makeStyles, Tabs, Tab } from "@material-ui/core";
+import ChatIcon from "@material-ui/icons/Chat";
+import PersonIcon from "@material-ui/icons/Person";
 
 import ContactDrawer from "../ContactDrawer";
 import MessageInput from "../MessageInput/";
@@ -13,6 +15,7 @@ import TicketHeader from "../TicketHeader";
 import TicketInfo from "../TicketInfo";
 import TicketActionButtons from "../TicketActionButtons";
 import MessagesList from "../MessagesList";
+import CustomerTab from "../CustomerTab";
 import api from "../../services/api";
 import { ReplyMessageProvider } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
@@ -66,6 +69,25 @@ const useStyles = makeStyles((theme) => ({
     }),
     marginRight: theme.spacing(1),
   },
+
+  tabsWrapper: {
+    borderBottom: `1px solid ${theme.palette.divider}`,
+    backgroundColor: theme.palette.background.paper,
+    minHeight: 44,
+  },
+  tab: {
+    minHeight: 44,
+    fontWeight: 600,
+    fontSize: "0.875rem",
+    textTransform: "none",
+  },
+  tabPanel: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    height: "100%",
+  },
 }));
 
 const Ticket = () => {
@@ -73,6 +95,7 @@ const Ticket = () => {
   const history = useHistory();
   const classes = useStyles();
 
+  const [activeTab, setActiveTab] = useState("messages");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [contact, setContact] = useState({});
@@ -104,11 +127,11 @@ const Ticket = () => {
     socket.on("connect", () => socket.emit("joinChatBox", ticketId));
 
     socket.on("ticket", (data) => {
-      if (data.action === "update") {
+      if (data.action === "update" && data.ticket?.id === +ticketId) {
         setTicket(data.ticket);
       }
 
-      if (data.action === "delete") {
+      if (data.action === "delete" && data.ticketId === +ticketId) {
         toast.success("Ticket deleted sucessfully.");
         history.push("/tickets");
       }
@@ -159,13 +182,43 @@ const Ticket = () => {
             <TicketActionButtons ticket={ticket} />
           </div>
         </TicketHeader>
-        <ReplyMessageProvider>
-          <MessagesList
-            ticketId={ticketId}
-            isGroup={ticket.isGroup}
-          ></MessagesList>
-          <MessageInput ticketStatus={ticket.status} />
-        </ReplyMessageProvider>
+        <Paper square elevation={0} className={classes.tabsWrapper}>
+          <Tabs
+            value={activeTab}
+            onChange={(_, val) => setActiveTab(val)}
+            indicatorColor="primary"
+            textColor="primary"
+            variant="standard"
+          >
+            <Tab
+              value="messages"
+              label="Mensagens"
+              icon={<ChatIcon fontSize="small" />}
+              className={classes.tab}
+            />
+            <Tab
+              value="customer"
+              label="Ficha do Cliente"
+              icon={<PersonIcon fontSize="small" />}
+              className={classes.tab}
+            />
+          </Tabs>
+        </Paper>
+        {activeTab === "messages" ? (
+          <div className={classes.tabPanel}>
+            <ReplyMessageProvider>
+              <MessagesList
+                ticketId={ticketId}
+                isGroup={ticket.isGroup}
+              ></MessagesList>
+              <MessageInput ticketStatus={ticket.status} />
+            </ReplyMessageProvider>
+          </div>
+        ) : (
+          <div className={classes.tabPanel}>
+            <CustomerTab contact={contact} ticket={ticket} />
+          </div>
+        )}
       </Paper>
       <ContactDrawer
         open={drawerOpen}

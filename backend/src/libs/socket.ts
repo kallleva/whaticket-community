@@ -42,6 +42,12 @@ export const initIO = (httpServer: Server): SocketIO => {
       socket.join(status);
     });
 
+    socket.on("joinReminders", () => {
+      const { id } = tokenData as { id: string };
+      logger.info("A client joined reminders channel");
+      socket.join(`user_${id}`);
+    });
+
     socket.on("disconnect", () => {
       logger.info("Client disconnected");
     });

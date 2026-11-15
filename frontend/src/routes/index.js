@@ -13,6 +13,14 @@ import Users from "../pages/Users";
 import Contacts from "../pages/Contacts/";
 import QuickAnswers from "../pages/QuickAnswers/";
 import Queues from "../pages/Queues/";
+import Reminders from "../pages/Reminders/";
+import Birthdays from "../pages/Birthdays/";
+import Flows from "../pages/Flows/";
+import FlowEditor from "../pages/FlowEditor/";
+import AiSettings from "../pages/AiSettings/";
+import Agents from "../pages/Agents/";
+import Vehicles from "../pages/Vehicles/";
+import TestDrives from "../pages/TestDrives/";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
@@ -36,6 +44,14 @@ const Routes = () => {
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 <Route exact path="/Settings" component={Settings} isPrivate />
                 <Route exact path="/Queues" component={Queues} isPrivate />
+                <Route exact path="/reminders" component={Reminders} isPrivate />
+                <Route exact path="/birthdays" component={Birthdays} isPrivate />
+                <Route exact path="/flows" component={Flows} isPrivate />
+                <Route exact path="/flows/:flowId" component={FlowEditor} isPrivate />
+                <Route exact path="/ai-settings" component={AiSettings} isPrivate />
+                <Route exact path="/agents" component={Agents} isPrivate />
+                <Route exact path="/vehicles" component={Vehicles} isPrivate />
+                <Route exact path="/test-drives" component={TestDrives} isPrivate />
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>

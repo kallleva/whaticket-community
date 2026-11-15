@@ -11,6 +11,11 @@ interface ContactData {
   email?: string;
   number?: string;
   name?: string;
+  address?: string;
+  birthDate?: string;
+  document?: string;
+  leadStatus?: string;
+  pipelineStage?: string;
   extraInfo?: ExtraInfo[];
 }
 
@@ -23,11 +28,32 @@ const UpdateContactService = async ({
   contactData,
   contactId
 }: Request): Promise<Contact> => {
-  const { email, name, number, extraInfo } = contactData;
+  const {
+    email,
+    name,
+    number,
+    extraInfo,
+    address,
+    birthDate,
+    document,
+    leadStatus,
+    pipelineStage
+  } = contactData;
 
   const contact = await Contact.findOne({
     where: { id: contactId },
-    attributes: ["id", "name", "number", "email", "profilePicUrl"],
+    attributes: [
+      "id",
+      "name",
+      "number",
+      "email",
+      "profilePicUrl",
+      "address",
+      "birthDate",
+      "document",
+      "leadStatus",
+      "pipelineStage"
+    ],
     include: ["extraInfo"]
   });
 
@@ -56,11 +82,27 @@ const UpdateContactService = async ({
   await contact.update({
     name,
     number,
-    email
+    email,
+    address,
+    birthDate,
+    document,
+    leadStatus,
+    pipelineStage
   });
 
   await contact.reload({
-    attributes: ["id", "name", "number", "email", "profilePicUrl"],
+    attributes: [
+      "id",
+      "name",
+      "number",
+      "email",
+      "profilePicUrl",
+      "address",
+      "birthDate",
+      "document",
+      "leadStatus",
+      "pipelineStage"
+    ],
     include: ["extraInfo"]
   });
 
