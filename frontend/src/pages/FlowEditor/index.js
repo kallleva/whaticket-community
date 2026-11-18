@@ -218,6 +218,7 @@ const FlowCanvas = ({ flowName, onNodesEdgesReady }) => {
       </Box>
       <FlowNodeConfigDrawer
         node={selectedNode}
+        nodes={nodes}
         onChange={handleNodeDataChange}
         onClose={() => setSelectedNode(null)}
         onDelete={handleNodeDelete}

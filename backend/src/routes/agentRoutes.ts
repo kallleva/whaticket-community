@@ -9,6 +9,8 @@ agentRoutes.get("/agents", isAuth, AgentController.index);
 
 agentRoutes.post("/agents", isAuth, AgentController.store);
 
+agentRoutes.get("/agents/tools", isAuth, AgentController.listTools);
+
 agentRoutes.get("/agents/:agentId", isAuth, AgentController.show);
 
 agentRoutes.put("/agents/:agentId", isAuth, AgentController.update);

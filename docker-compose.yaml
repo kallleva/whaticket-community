@@ -6,6 +6,7 @@ networks:
 services:
 
   backend:
+    stop_grace_period: 60s
     build:
       context: ./backend
       dockerfile: ./Dockerfile
@@ -20,6 +21,12 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - PROXY_PORT=${PROXY_PORT:-8080}
       - CHROME_ARGS=--no-sandbox --disable-setuid-sandbox
+      - WHISPER_ASR_URL=${WHISPER_ASR_URL:-http://whisper-asr:9000}
+      - PIPER_TTS_URL=${PIPER_TTS_URL:-http://piper-tts:5000}
+      - PIPER_VOICE=${PIPER_VOICE:-pt_BR-faber-medium}
+      - KOKORO_TTS_URL=${KOKORO_TTS_URL:-http://kokoro-tts:8880}
+      - KOKORO_VOICE=${KOKORO_VOICE:-pf_dora}
+      - LOCAL_LLM_KEEP_ALIVE=${LOCAL_LLM_KEEP_ALIVE:-30m}
     ports:
       - ${BACKEND_PORT:-8080}:3000
     volumes:
@@ -28,6 +35,9 @@ services:
       - ./backend/.zapo_auth/:/usr/src/app/.zapo_auth/
     networks:
       - whaticket
+    depends_on:
+      - whisper-asr
+      - piper-tts
 
   frontend:
     ports:
@@ -44,6 +54,35 @@ services:
     volumes:
       - ./ssl/certs/:/etc/nginx/ssl/
       - ./ssl/www/:/var/www/letsencrypt/
+    networks:
+      - whaticket
+
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    environment:
+      - ASR_ENGINE=faster_whisper
+      - ASR_MODEL=${WHISPER_MODEL:-small}
+    ports:
+      - ${WHISPER_PORT:-9000}:9000
+    volumes:
+      - ./.docker/whisper-cache/:/root/.cache
+    networks:
+      - whaticket
+
+  piper-tts:
+    image: kamilkrawiec/piper-openai-tts:latest
+    volumes:
+      - ./.docker/piper-data/:/data
+    ports:
+      - ${PIPER_PORT:-5500}:5000
+    networks:
+      - whaticket
+
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    ports:
+      - ${KOKORO_PORT:-8880}:8880
+    restart: unless-stopped
     networks:
       - whaticket
 

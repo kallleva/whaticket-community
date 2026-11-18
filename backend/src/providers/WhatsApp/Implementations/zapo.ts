@@ -587,6 +587,11 @@ const getWbot = (sessionId: number): WaClient => {
   return client;
 };
 
+const destroyAllSessions = async (): Promise<void> => {
+  const ids = Array.from(sessions.keys());
+  await Promise.all(ids.map(id => removeSession(id)));
+};
+
 const removeSession = async (whatsappId: number): Promise<void> => {
   const client = sessions.get(whatsappId);
   if (!client) return;
@@ -1047,6 +1052,7 @@ const fetchChatMessages = async (
 export const ZapoProvider: WhatsappProvider = {
   init,
   removeSession,
+  destroyAllSessions,
   logout,
   sendMessage,
   sendMedia,

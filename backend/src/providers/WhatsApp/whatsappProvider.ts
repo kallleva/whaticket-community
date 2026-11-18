@@ -12,6 +12,7 @@ import { ZapoProvider } from "./Implementations/zapo";
 export interface WhatsappProvider {
   init(whatsapp: Whatsapp): Promise<void>;
   removeSession(whatsappId: number): void;
+  destroyAllSessions(): Promise<void>;
   logout(sessionId: number): Promise<void>;
   sendMessage(
     sessionId: number,

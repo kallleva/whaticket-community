@@ -15,6 +15,7 @@ import {
 	Tooltip,
 	Typography,
 	CircularProgress,
+	Chip,
 } from "@material-ui/core";
 import {
 	Edit,
@@ -122,6 +123,7 @@ const Connections = () => {
 	const handleRequestNewQrCode = async whatsAppId => {
 		try {
 			await api.put(`/whatsappsession/${whatsAppId}`);
+			toast.success("Reconectando... aguarde o novo QR Code.");
 		} catch (err) {
 			toastError(err);
 		}
@@ -195,6 +197,15 @@ const Connections = () => {
 	};
 
 	const renderActionButtons = whatsApp => {
+		// Além dos botões específicos de cada status, sempre mostramos um
+		// "Reconectar" universal (exceto quando já está mostrando o QR Code na
+		// hora) — ele força um novo QR Code e reinicia a sessão do zero sem
+		// precisar excluir a conexão (o que desvincularia usuários/filas).
+		// Cobre também estados "travados" (ex.: ficou preso em "Conectando..."
+		// ou algum status que o WhatsApp Web retornou e não é tratado
+		// explicitamente abaixo).
+		const showUniversalReconnect = whatsApp.status !== "qrcode";
+
 		return (
 			<>
 				{whatsApp.status === "qrcode" && (
@@ -208,24 +219,14 @@ const Connections = () => {
 					</Button>
 				)}
 				{whatsApp.status === "DISCONNECTED" && (
-					<>
-						<Button
-							size="small"
-							variant="outlined"
-							color="primary"
-							onClick={() => handleStartWhatsAppSession(whatsApp.id)}
-						>
-							{i18n.t("connections.buttons.tryAgain")}
-						</Button>{" "}
-						<Button
-							size="small"
-							variant="outlined"
-							color="secondary"
-							onClick={() => handleRequestNewQrCode(whatsApp.id)}
-						>
-							{i18n.t("connections.buttons.newQr")}
-						</Button>
-					</>
+					<Button
+						size="small"
+						variant="outlined"
+						color="primary"
+						onClick={() => handleStartWhatsAppSession(whatsApp.id)}
+					>
+						{i18n.t("connections.buttons.tryAgain")}
+					</Button>
 				)}
 				{(whatsApp.status === "CONNECTED" ||
 					whatsApp.status === "PAIRING" ||
@@ -244,6 +245,17 @@ const Connections = () => {
 				{whatsApp.status === "OPENING" && (
 					<Button size="small" variant="outlined" disabled color="default">
 						{i18n.t("connections.buttons.connecting")}
+					</Button>
+				)}
+				{showUniversalReconnect && (
+					<Button
+						size="small"
+						variant="outlined"
+						color="primary"
+						style={{ marginLeft: 4 }}
+						onClick={() => handleRequestNewQrCode(whatsApp.id)}
+					>
+						Reconectar
 					</Button>
 				)}
 			</>
@@ -340,6 +352,7 @@ const Connections = () => {
 							<TableCell align="center">
 								{i18n.t("connections.table.default")}
 							</TableCell>
+							<TableCell align="center">Funil Vinculado</TableCell>
 							<TableCell align="center">
 								{i18n.t("connections.table.actions")}
 							</TableCell>
@@ -380,6 +393,20 @@ const Connections = () => {
 													<div className={classes.customTableCell}>
 														<CheckCircle style={{ color: green[500] }} />
 													</div>
+												)}
+											</TableCell>
+											<TableCell align="center" data-label="Funil Vinculado">
+												{whatsApp.flow ? (
+													<Chip
+														label={whatsApp.flow.name}
+														size="small"
+														color="primary"
+														variant="outlined"
+													/>
+												) : (
+													<Typography variant="body2" color="textSecondary">
+														Nenhum (menu de filas)
+													</Typography>
 												)}
 											</TableCell>
 											<TableCell align="center">

@@ -1,5 +1,4 @@
 import AppError from "../../errors/AppError";
-import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import Ticket from "../../models/Ticket";
 import User from "../../models/User";
@@ -12,6 +11,9 @@ interface Request {
   queueId?: number;
 }
 
+// Um contato tem um único ticket, pra sempre (ver FindOrCreateTicketService):
+// se já existe, ele é reaproveitado — reaberto e atribuído a quem pediu se
+// estava resolvido — em vez de criar um segundo ticket pro mesmo número.
 const CreateTicketService = async ({
   contactId,
   status,
@@ -20,7 +22,34 @@ const CreateTicketService = async ({
 }: Request): Promise<Ticket> => {
   const defaultWhatsapp = await GetDefaultWhatsApp(userId);
 
-  await CheckContactOpenTickets(contactId, defaultWhatsapp.id);
+  const existing = await Ticket.findOne({
+    where: { contactId },
+    order: [["updatedAt", "DESC"]]
+  });
+
+  if (existing) {
+    if (existing.status === "closed") {
+      await existing.update({
+        status,
+        userId,
+        whatsappId: defaultWhatsapp.id,
+        flowId: null,
+        flowNodeId: null,
+        flowResumeAt: null,
+        flowCallStack: [],
+        flowVariables: {},
+        aiAgentId: null,
+        agentFallbackQueueId: null
+      });
+    }
+
+    const reused = await Ticket.findByPk(existing.id, { include: ["contact"] });
+    if (!reused) {
+      throw new AppError("ERR_CREATING_TICKET");
+    }
+
+    return reused;
+  }
 
   const { isGroup } = await ShowContactService(contactId);
 

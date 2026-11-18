@@ -1,3 +1,5 @@
+import { join } from "path";
+import { unlink } from "fs/promises";
 import qrCode from "qrcode-terminal";
 import {
   Client,
@@ -11,6 +13,7 @@ import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import { logger } from "../../../utils/logger";
+import { withLock } from "../../../helpers/AsyncLock";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
   ProviderMessage,
@@ -300,16 +303,43 @@ const syncUnreadMessages = async (wbot: Session) => {
   }
 };
 
-const removeSession = (whatsappId: number): void => {
+const READY_TIMEOUT_MS = 90000;
+const MAX_READY_RETRIES = 3;
+const readyWatchdogs = new Map<number, NodeJS.Timeout>();
+const readyRetries = new Map<number, number>();
+
+const clearReadyWatchdog = (whatsappId: number): void => {
+  const timer = readyWatchdogs.get(whatsappId);
+  if (timer) clearTimeout(timer);
+  readyWatchdogs.delete(whatsappId);
+};
+
+const removeSession = async (whatsappId: number): Promise<void> => {
+  clearReadyWatchdog(whatsappId);
+
   try {
     const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
     if (sessionIndex !== -1) {
-      sessions[sessionIndex].destroy();
-      sessions.splice(sessionIndex, 1);
+      const [session] = sessions.splice(sessionIndex, 1);
+      // Precisa esperar o Chrome dessa sessão realmente fechar antes de
+      // qualquer `init()` seguinte poder abrir outro apontando pro mesmo
+      // userDataDir — sem isso, os dois processos de Chrome disputam o
+      // mesmo perfil (erro "browser is already running for ...") e tudo
+      // trava de forma incoerente (frame destacado, contexto destruído).
+      await session.destroy();
     }
   } catch (err) {
-    logger.error(err);
+    logger.error(err, "Error destroying previous whatsapp session");
   }
+};
+
+// Chamado no shutdown gracioso do processo (ver server.ts) — fecha todos os
+// Chrome abertos antes do container morrer, pra não deixar SingletonLock
+// travado no próximo boot (o que faz o Chrome do boot seguinte brigar com
+// um processo zumbi pelo mesmo perfil).
+const destroyAllSessions = async (): Promise<void> => {
+  const ids = sessions.map(session => session.id).filter((id): id is number => id !== undefined);
+  await Promise.all(ids.map(id => removeSession(id)));
 };
 
 const sendMessage = async (
@@ -450,11 +480,48 @@ const deleteMessage = async (
   await message.delete(true);
 };
 
-const init = async (whatsapp: Whatsapp): Promise<void> => {
-  try {
-    removeSession(whatsapp.id);
+// O Chrome cria esses arquivos no perfil (userDataDir) pra impedir dois
+// processos usando o mesmo perfil ao mesmo tempo. Se o container anterior
+// morreu sem dar tempo do Chrome fechar sozinho (container reiniciado,
+// `docker stop` matando tudo antes do shutdown gracioso terminar — Chrome
+// pode demorar mais que o tempo de graça padrão do Docker), esse arquivo
+// fica órfão e todo boot seguinte falha com "profile already in use",
+// mesmo não existindo mais processo nenhum de fato usando ele (um
+// container novo nunca herda processos do anterior — se o arquivo existe
+// nesse ponto, é sempre lixo de uma geração anterior, nunca de um
+// processo vivo desta).
+const clearStaleSingletonLock = async (whatsappId: number): Promise<void> => {
+  const sessionDir = join(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "..",
+    ".wwebjs_auth",
+    `session-bd_${whatsappId}`
+  );
 
-    const io = getIO();
+  await Promise.all(
+    ["SingletonLock", "SingletonSocket", "SingletonCookie"].map(file =>
+      unlink(join(sessionDir, file)).catch(() => undefined)
+    )
+  );
+};
+
+// `init()` pode ser chamado mais de uma vez "ao mesmo tempo" pra mesma
+// conexão sem isso ser um bug de quem chamou — ex.: o handler de
+// "disconnected" dispara um retry automático, e o usuário pode clicar em
+// "Reconectar" no mesmo instante. Sem esse lock, as duas chamadas lançam
+// Chrome em paralelo apontando pro mesmo userDataDir e corrompem a sessão
+// dos dois (foi exatamente isso que causou "browser is already running"
+// e os erros de frame destacado nos logs).
+const init = async (whatsapp: Whatsapp): Promise<void> =>
+  withLock(`whatsapp-init-${whatsapp.id}`, async () => {
+    try {
+      await removeSession(whatsapp.id);
+      await clearStaleSingletonLock(whatsapp.id);
+
+      const io = getIO();
     const sessionName = whatsapp.name;
 
     const args: string = process.env.CHROME_ARGS || "";
@@ -497,6 +564,35 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("authenticated", async () => {
       logger.info(`Session: ${sessionName} AUTHENTICATED`);
+
+      // Vigia: às vezes o WhatsApp Web autentica mas trava carregando e o
+      // "ready" nunca chega (perfil do Chrome com estado ruim depois de um
+      // restart, por exemplo) — a conexão ficaria em "Conectando..." pra
+      // sempre. Se não ficar pronta a tempo, reinicia a sessão sozinha (a
+      // pasta do perfil é mantida, então não pede QR Code de novo).
+      clearReadyWatchdog(whatsapp.id);
+      readyWatchdogs.set(
+        whatsapp.id,
+        setTimeout(async () => {
+          const attempts = (readyRetries.get(whatsapp.id) || 0) + 1;
+          readyRetries.set(whatsapp.id, attempts);
+
+          if (attempts > MAX_READY_RETRIES) {
+            logger.error(
+              `Session ${sessionName} did not become ready after ${MAX_READY_RETRIES} automatic restarts`
+            );
+            await removeSession(whatsapp.id);
+            await whatsapp.update({ status: "DISCONNECTED" });
+            io.emit("whatsappSession", { action: "update", session: whatsapp });
+            return;
+          }
+
+          logger.warn(
+            `Session ${sessionName} authenticated but not ready after ${READY_TIMEOUT_MS / 1000}s — restarting (attempt ${attempts})`
+          );
+          void init(whatsapp);
+        }, READY_TIMEOUT_MS)
+      );
     });
 
     wbot.on("auth_failure", async msg => {
@@ -521,6 +617,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("ready", async () => {
       logger.info(`Session: ${sessionName} READY`);
+      clearReadyWatchdog(whatsapp.id);
+      readyRetries.delete(whatsapp.id);
 
       try {
         await whatsapp.update({
@@ -623,15 +721,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       handleMessageAck(msg.id.id, mapMessageAck(ack));
     });
 
-    await wbot.initialize();
-  } catch (err) {
-    logger.error(err, "Error on whatsapp session");
-  }
-};
+      await wbot.initialize();
+    } catch (err) {
+      logger.error(err, "Error on whatsapp session");
+    }
+  });
 
 export const WhatsappWebJsProvider: WhatsappProvider = {
   init,
   removeSession,
+  destroyAllSessions,
   logout,
   sendMessage,
   sendMedia,

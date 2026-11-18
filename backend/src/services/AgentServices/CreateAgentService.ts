@@ -5,10 +5,15 @@ import Agent from "../../models/Agent";
 interface Request {
   name: string;
   skillPrompt: string;
+  extraContext?: string;
   model: string;
   temperature?: number;
   handoffMarker?: string;
   fallbackQueueId?: number;
+  providerType?: string;
+  apiUrl?: string;
+  tools?: string[];
+  voiceReplies?: boolean;
 }
 
 const CreateAgentService = async (agentData: Request): Promise<Agent> => {

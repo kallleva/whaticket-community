@@ -9,6 +9,7 @@ import {
   Button,
   IconButton,
   Divider,
+  Chip,
 } from "@material-ui/core";
 import { DeleteOutline, Add } from "@material-ui/icons";
 
@@ -42,14 +43,25 @@ const PIPELINE_STAGE_OPTIONS = [
   { value: "lost", label: "❌ Perdido" },
 ];
 
-const FlowNodeConfigDrawer = ({ node, onChange, onClose, onDelete }) => {
+// Nomes de variável que qualquer node "question"/"menu" do funil pode ter
+// produzido — mesma regra usada pelo motor de execução (variableName, ou o
+// id do node se não tiver nome definido). Não tenta calcular só o que é
+// "anterior" no grafo (seria preciso seguir as edges); mostrar todas é
+// simples e, na prática, raramente vai sobrar variável de um ramo que não
+// é alcançado.
+const getAvailableVariables = (nodes) =>
+  (nodes || [])
+    .filter((n) => n.data?.type === "question" || n.data?.type === "menu")
+    .map((n) => n.data?.variableName || n.id);
+
+const FlowNodeConfigDrawer = ({ node, nodes, onChange, onClose, onDelete }) => {
   const { flowId } = useParams();
   const [queues, setQueues] = useState([]);
   const [agents, setAgents] = useState([]);
   const [flows, setFlows] = useState([]);
 
   useEffect(() => {
-    if (node?.data?.type === "transfer_queue") {
+    if (node?.data?.type === "transfer_queue" || node?.data?.type === "transfer_agent") {
       api
         .get("/queue")
         .then(({ data }) => setQueues(data))
@@ -77,6 +89,34 @@ const FlowNodeConfigDrawer = ({ node, onChange, onClose, onDelete }) => {
     onChange(node.id, { ...data, ...changes });
   };
 
+  const insertVariableInto = (field, varName) => {
+    const current = data[field] || "";
+    const separator = current && !current.endsWith(" ") ? " " : "";
+    update({ [field]: `${current}${separator}{{${varName}}}` });
+  };
+
+  const VariableChips = ({ field }) => {
+    const variables = getAvailableVariables(nodes);
+    if (variables.length === 0) return null;
+
+    return (
+      <Box display="flex" flexWrap="wrap" style={{ gap: 4 }} mb={1}>
+        <Typography variant="caption" color="textSecondary" style={{ width: "100%" }}>
+          Clique para inserir uma variável de resposta anterior:
+        </Typography>
+        {variables.map((varName) => (
+          <Chip
+            key={varName}
+            label={`{{${varName}}}`}
+            size="small"
+            variant="outlined"
+            onClick={() => insertVariableInto(field, varName)}
+          />
+        ))}
+      </Box>
+    );
+  };
+
   const updateOption = (index, changes) => {
     const options = [...(data.options || [])];
     options[index] = { ...options[index], ...changes };
@@ -102,16 +142,20 @@ const FlowNodeConfigDrawer = ({ node, onChange, onClose, onDelete }) => {
         <Divider style={{ margin: "12px 0" }} />
 
         {(data.type === "message" || data.type === "question") && (
-          <TextField
-            label="Texto"
-            fullWidth
-            multiline
-            rows={4}
-            variant="outlined"
-            margin="dense"
-            value={data.text || ""}
-            onChange={(e) => update({ text: e.target.value })}
-          />
+          <>
+            <VariableChips field="text" />
+            <TextField
+              label="Texto"
+              fullWidth
+              multiline
+              rows={4}
+              variant="outlined"
+              margin="dense"
+              helperText='Use {{nomeDaVariavel}} pra inserir uma resposta anterior no texto.'
+              value={data.text || ""}
+              onChange={(e) => update({ text: e.target.value })}
+            />
+          </>
         )}
 
         {data.type === "question" && (
@@ -127,6 +171,7 @@ const FlowNodeConfigDrawer = ({ node, onChange, onClose, onDelete }) => {
 
         {data.type === "menu" && (
           <>
+            <VariableChips field="text" />
             <TextField
               label="Texto do menu"
               fullWidth
@@ -258,6 +303,25 @@ const FlowNodeConfigDrawer = ({ node, onChange, onClose, onDelete }) => {
               value={data.transitionText || ""}
               onChange={(e) => update({ transitionText: e.target.value })}
             />
+            <TextField
+              select
+              label="Fila para onde ir se a pessoa pedir humano"
+              fullWidth
+              variant="outlined"
+              margin="dense"
+              value={data.queueId || ""}
+              onChange={(e) => update({ queueId: Number(e.target.value) || null })}
+              helperText="Se não escolher, usa a fila de fallback cadastrada no próprio Agente."
+            >
+              <MenuItem value="">
+                <em>Usar fila de fallback do Agente</em>
+              </MenuItem>
+              {queues.map((queue) => (
+                <MenuItem key={queue.id} value={queue.id}>
+                  {queue.name}
+                </MenuItem>
+              ))}
+            </TextField>
           </>
         )}
 

@@ -1,5 +1,3 @@
-import { subHours } from "date-fns";
-import { Op } from "sequelize";
 import Contact from "../../models/Contact";
 import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
@@ -37,73 +35,57 @@ const resolveAssignment = async (
   return reassignUserForQueue(queueId);
 };
 
+// Um contato (número) tem UM único ticket, pra sempre — o histórico inteiro
+// da conversa fica num lugar só, independente de status, de quanto tempo
+// passou ou de qual conexão a mensagem chegou. Se o ticket estava resolvido
+// ("closed"), ele é reaberto (e o funil/agente de IA são resetados pra
+// cliente voltar a ser atendido do começo, ou direto pro dono da carteira).
 const FindOrCreateTicketService = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
   groupContact?: Contact
 ): Promise<Ticket> => {
+  const ticketContactId = groupContact ? groupContact.id : contact.id;
+
+  // order: caso ainda existam duplicados antigos (anteriores à migration que
+  // unificou os tickets), usa sempre o mais recentemente atualizado.
   let ticket = await Ticket.findOne({
-    where: {
-      status: {
-        [Op.or]: ["open", "pending"]
-      },
-      contactId: groupContact ? groupContact.id : contact.id,
-      whatsappId: whatsappId
-    }
+    where: { contactId: ticketContactId },
+    order: [["updatedAt", "DESC"]]
   });
 
   if (ticket) {
-    await ticket.update({ unreadMessages });
-  }
+    const changes: Record<string, unknown> = { unreadMessages, whatsappId };
 
-  if (!ticket && groupContact) {
-    ticket = await Ticket.findOne({
-      where: {
-        contactId: groupContact.id,
-        whatsappId: whatsappId
-      },
-      order: [["updatedAt", "DESC"]]
-    });
+    if (ticket.status === "closed") {
+      if (groupContact) {
+        changes.status = "pending";
+        changes.userId = null;
+      } else {
+        const { status, userId } = await resolveAssignment(contact, null);
+        changes.status = status;
+        changes.userId = userId;
+        changes.queueId = null;
+      }
 
-    if (ticket) {
-      await ticket.update({
-        status: "pending",
-        userId: null,
-        unreadMessages
-      });
+      changes.flowId = null;
+      changes.flowNodeId = null;
+      changes.flowResumeAt = null;
+      changes.flowCallStack = [];
+      changes.flowVariables = {};
+      changes.aiAgentId = null;
+      changes.agentFallbackQueueId = null;
     }
-  }
 
-  if (!ticket && !groupContact) {
-    ticket = await Ticket.findOne({
-      where: {
-        updatedAt: {
-          [Op.between]: [+subHours(new Date(), 2), +new Date()]
-        },
-        contactId: contact.id,
-        whatsappId: whatsappId
-      },
-      order: [["updatedAt", "DESC"]]
-    });
-
-    if (ticket) {
-      const { status, userId } = await resolveAssignment(contact, ticket.queueId);
-      await ticket.update({
-        status,
-        userId,
-        unreadMessages
-      });
-    }
-  }
-
-  if (!ticket) {
+    await ticket.update(changes);
+  } else {
     const { status, userId } = !groupContact
       ? await resolveAssignment(contact, null)
       : { status: "pending", userId: null };
 
     ticket = await Ticket.create({
-      contactId: groupContact ? groupContact.id : contact.id,
+      contactId: ticketContactId,
       status,
       userId,
       isGroup: !!groupContact,

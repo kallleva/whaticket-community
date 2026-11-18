@@ -6,6 +6,7 @@ import ShowAgentService from "../services/AgentServices/ShowAgentService";
 import CreateAgentService from "../services/AgentServices/CreateAgentService";
 import UpdateAgentService from "../services/AgentServices/UpdateAgentService";
 import DeleteAgentService from "../services/AgentServices/DeleteAgentService";
+import { AVAILABLE_TOOLS } from "../services/AgentServices/tools";
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const agents = await ListAgentsService();
@@ -22,16 +23,32 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { name, skillPrompt, model, temperature, handoffMarker, fallbackQueueId } =
-    req.body;
+  const {
+    name,
+    skillPrompt,
+    extraContext,
+    model,
+    temperature,
+    handoffMarker,
+    fallbackQueueId,
+    providerType,
+    apiUrl,
+    tools,
+    voiceReplies
+  } = req.body;
 
   const agent = await CreateAgentService({
     name,
     skillPrompt,
+    extraContext,
     model,
     temperature,
     handoffMarker,
-    fallbackQueueId
+    fallbackQueueId,
+    providerType,
+    apiUrl,
+    tools,
+    voiceReplies
   });
 
   const io = getIO();
@@ -52,6 +69,12 @@ export const update = async (
   io.emit("agent", { action: "update", agent });
 
   return res.status(200).json(agent);
+};
+
+export const listTools = async (req: Request, res: Response): Promise<Response> => {
+  const tools = AVAILABLE_TOOLS.map(tool => ({ key: tool.key, label: tool.label }));
+
+  return res.status(200).json(tools);
 };
 
 export const remove = async (

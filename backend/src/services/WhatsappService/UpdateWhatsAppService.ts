@@ -44,7 +44,7 @@ const UpdateWhatsAppService = async ({
     session,
     greetingMessage,
     farewellMessage,
-    queueIds = [],
+    queueIds,
     flowId
   } = whatsappData;
 
@@ -54,7 +54,7 @@ const UpdateWhatsAppService = async ({
     throw new AppError(err.message);
   }
 
-  if (queueIds.length > 1 && !greetingMessage) {
+  if ((queueIds?.length ?? 0) > 1 && !greetingMessage) {
     throw new AppError("ERR_WAPP_GREETING_REQUIRED");
   }
 
@@ -71,21 +71,25 @@ const UpdateWhatsAppService = async ({
 
   const whatsapp = await ShowWhatsAppService(whatsappId);
 
+  // Só grava os campos que vieram de fato no payload — chamadas parciais
+  // (ex.: a reconexão de sessão manda só `{ session: "" }`) não podem
+  // apagar o resto. O Sequelize grava NULL/`$set([])` pra qualquer campo
+  // ausente se a gente não proteger isso explicitamente.
   await whatsapp.update({
-    name,
-    status,
-    session,
-    greetingMessage,
-    farewellMessage,
-    isDefault,
-    // flowId só é alterado quando explicitamente enviado — do contrário o
-    // Sequelize grava NULL para qualquer campo ausente do payload (ex.: a
-    // chamada de reconexão de sessão só envia `{ session: "" }`), o que
-    // desvincularia o funil silenciosamente a cada reconexão da conexão.
+    name: name !== undefined ? name : whatsapp.name,
+    status: status !== undefined ? status : whatsapp.status,
+    session: session !== undefined ? session : whatsapp.session,
+    greetingMessage:
+      greetingMessage !== undefined ? greetingMessage : whatsapp.greetingMessage,
+    farewellMessage:
+      farewellMessage !== undefined ? farewellMessage : whatsapp.farewellMessage,
+    isDefault: isDefault !== undefined ? isDefault : whatsapp.isDefault,
     flowId: flowId !== undefined ? flowId : whatsapp.flowId
   });
 
-  await AssociateWhatsappQueue(whatsapp, queueIds);
+  if (queueIds !== undefined) {
+    await AssociateWhatsappQueue(whatsapp, queueIds);
+  }
 
   return { whatsapp, oldDefaultWhatsapp };
 };

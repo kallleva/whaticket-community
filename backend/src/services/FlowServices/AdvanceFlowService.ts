@@ -14,6 +14,7 @@ import RunAiAgentTurnService from "../AgentServices/RunAiAgentTurnService";
 // timeouts de debounce vive na memória do processo Node.
 
 const MAX_STEPS = 25;
+const MAX_INVALID_MENU_ATTEMPTS = 3;
 
 const findNode = (nodes: FlowNode[], id: string): FlowNode | undefined =>
   nodes.find(n => n.id === id);
@@ -210,7 +211,13 @@ const continueFrom = async (
         if (node.data.transitionText) {
           await sendText(ticket, node.data.transitionText);
         }
-        await ticket.update({ flowNodeId: null, aiAgentId: node.data.agentId });
+        await ticket.update({
+          flowNodeId: null,
+          aiAgentId: node.data.agentId,
+          // Fila pra onde vai o ticket se a pessoa pedir humano enquanto a
+          // IA conversa — configurada aqui no node, não só no Agente.
+          agentFallbackQueueId: node.data.queueId ?? null
+        });
         // Dispara o primeiro turno do agente de IA direto (sem esperar o
         // cliente mandar outra mensagem), para não deixá-lo esperando.
         await RunAiAgentTurnService(ticket, null);
@@ -368,6 +375,26 @@ export const advanceFlow = async (
     const chosenOption = options[index];
 
     if (!chosenOption) {
+      // Trava de segurança: se a "pessoa" responde opção inválida várias
+      // vezes seguidas, provavelmente é outro robô (ex.: atendimento
+      // automático de empresa) — reenviar o menu pra sempre vira um loop
+      // infinito de mensagens entre dois bots. Depois de 3 tentativas
+      // inválidas o funil para e o ticket fica pendente pra um humano.
+      const invalidKey = `__menuInvalid_${node.id}`;
+      const invalidCount = Number(ticket.flowVariables?.[invalidKey] ?? 0) + 1;
+
+      if (invalidCount >= MAX_INVALID_MENU_ATTEMPTS) {
+        await endFlowAbnormally(
+          ticket,
+          `${invalidCount} respostas inválidas seguidas no menu ${node.id} (possível robô do outro lado) — funil encerrado`
+        );
+        return;
+      }
+
+      await ticket.update({
+        flowVariables: { ...(ticket.flowVariables ?? {}), [invalidKey]: String(invalidCount) }
+      });
+
       const resend = debounce(
         async () => {
           await sendMenuText(ticket, node);

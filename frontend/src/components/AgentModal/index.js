@@ -15,6 +15,13 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  FormControlLabel,
+  FormGroup,
+  Checkbox,
+  Switch,
+  Typography,
+  Divider,
+  Box,
 } from "@material-ui/core";
 
 import api from "../../services/api";
@@ -26,17 +33,25 @@ const AgentSchema = Yup.object().shape({
   model: Yup.string().required("Obrigatório"),
 });
 
+const DEFAULT_VALUES = {
+  name: "",
+  skillPrompt: "",
+  extraContext: "",
+  model: "",
+  temperature: 0.7,
+  handoffMarker: "HUMANO_SOLICITADO",
+  fallbackQueueId: "",
+  providerType: "gemini",
+  apiUrl: "",
+  tools: [],
+  voiceReplies: false,
+};
+
 const AgentModal = ({ open, onClose, agentId, onSaved }) => {
-  const [initialValues, setInitialValues] = useState({
-    name: "",
-    skillPrompt: "",
-    model: "",
-    temperature: 0.7,
-    handoffMarker: "HUMANO_SOLICITADO",
-    fallbackQueueId: "",
-  });
+  const [initialValues, setInitialValues] = useState(DEFAULT_VALUES);
   const [models, setModels] = useState([]);
   const [queues, setQueues] = useState([]);
+  const [availableTools, setAvailableTools] = useState([]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +61,10 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
       .get("/ai-settings")
       .then(({ data }) => setModels(data?.enabledModels || []))
       .catch(toastError);
+    api
+      .get("/agents/tools")
+      .then(({ data }) => setAvailableTools(data || []))
+      .catch(toastError);
 
     if (agentId) {
       api
@@ -54,22 +73,20 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
           setInitialValues({
             name: data.name || "",
             skillPrompt: data.skillPrompt || "",
+            extraContext: data.extraContext || "",
             model: data.model || "",
             temperature: data.temperature ?? 0.7,
             handoffMarker: data.handoffMarker || "HUMANO_SOLICITADO",
             fallbackQueueId: data.fallbackQueueId || "",
+            providerType: data.providerType || "gemini",
+            apiUrl: data.apiUrl || "",
+            tools: data.tools || [],
+            voiceReplies: !!data.voiceReplies,
           });
         })
         .catch(toastError);
     } else {
-      setInitialValues({
-        name: "",
-        skillPrompt: "",
-        model: "",
-        temperature: 0.7,
-        handoffMarker: "HUMANO_SOLICITADO",
-        fallbackQueueId: "",
-      });
+      setInitialValues(DEFAULT_VALUES);
     }
   }, [agentId, open]);
 
@@ -78,6 +95,7 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
       const payload = {
         ...values,
         fallbackQueueId: values.fallbackQueueId || null,
+        apiUrl: values.providerType === "local" ? values.apiUrl : null,
       };
 
       if (agentId) {
@@ -105,7 +123,7 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
         validationSchema={AgentSchema}
         onSubmit={(values, actions) => handleSave(values, actions)}
       >
-        {({ touched, errors, isSubmitting, values }) => (
+        {({ touched, errors, isSubmitting, values, setFieldValue }) => (
           <Form>
             <DialogContent dividers>
               <Field
@@ -124,7 +142,7 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
                 label="Skill (prompt de personalidade e regras)"
                 name="skillPrompt"
                 multiline
-                rows={10}
+                rows={8}
                 fullWidth
                 variant="outlined"
                 margin="dense"
@@ -133,21 +151,77 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
                 helperText={touched.skillPrompt && errors.skillPrompt}
               />
 
+              <Field
+                as={TextField}
+                label="Contexto adicional (opcional)"
+                name="extraContext"
+                multiline
+                rows={4}
+                fullWidth
+                variant="outlined"
+                margin="dense"
+                placeholder="Ex: horário de funcionamento, políticas da loja, destaques do estoque..."
+                helperText="Informações de referência, separadas da personalidade/regras acima."
+              />
+
+              <Divider style={{ margin: "12px 0" }} />
+              <Typography variant="subtitle2" color="textSecondary">
+                Provedor de IA
+              </Typography>
+
               <FormControl variant="outlined" margin="dense" fullWidth>
-                <InputLabel>Modelo</InputLabel>
-                <Field as={Select} name="model" label="Modelo">
-                  {models.length === 0 && (
-                    <MenuItem value="" disabled>
-                      Cadastre modelos em Configuração de IA
-                    </MenuItem>
-                  )}
-                  {models.map((m) => (
-                    <MenuItem key={m} value={m}>
-                      {m}
-                    </MenuItem>
-                  ))}
+                <InputLabel>Provedor</InputLabel>
+                <Field as={Select} name="providerType" label="Provedor">
+                  <MenuItem value="gemini">Google Gemini (API)</MenuItem>
+                  <MenuItem value="local">
+                    Modelo local / API própria (ex.: Qwen via Ollama)
+                  </MenuItem>
                 </Field>
               </FormControl>
+
+              {values.providerType === "local" ? (
+                <>
+                  <Field
+                    as={TextField}
+                    label="URL base da API (compatível com OpenAI)"
+                    name="apiUrl"
+                    fullWidth
+                    variant="outlined"
+                    margin="dense"
+                    placeholder="http://ollama:11434/v1"
+                  />
+                  <Field
+                    as={TextField}
+                    label="Nome do modelo"
+                    name="model"
+                    fullWidth
+                    variant="outlined"
+                    margin="dense"
+                    placeholder="qwen2.5:7b"
+                    error={touched.model && Boolean(errors.model)}
+                    helperText={
+                      (touched.model && errors.model) ||
+                      "Nome do modelo exatamente como o servidor local espera."
+                    }
+                  />
+                </>
+              ) : (
+                <FormControl variant="outlined" margin="dense" fullWidth>
+                  <InputLabel>Modelo</InputLabel>
+                  <Field as={Select} name="model" label="Modelo">
+                    {models.length === 0 && (
+                      <MenuItem value="" disabled>
+                        Cadastre modelos em Configuração de IA
+                      </MenuItem>
+                    )}
+                    {models.map((m) => (
+                      <MenuItem key={m} value={m}>
+                        {m}
+                      </MenuItem>
+                    ))}
+                  </Field>
+                </FormControl>
+              )}
 
               <Field
                 as={TextField}
@@ -159,6 +233,41 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
                 margin="dense"
               />
 
+              {values.providerType === "gemini" && (
+                <>
+                  <Divider style={{ margin: "12px 0" }} />
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Ferramentas (o agente pode consultar/agir no sistema)
+                  </Typography>
+                  <FormGroup>
+                    {availableTools.map((tool) => (
+                      <FormControlLabel
+                        key={tool.key}
+                        control={
+                          <Checkbox
+                            checked={values.tools.includes(tool.key)}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...values.tools, tool.key]
+                                : values.tools.filter((k) => k !== tool.key);
+                              setFieldValue("tools", next);
+                            }}
+                          />
+                        }
+                        label={tool.label}
+                      />
+                    ))}
+                    {availableTools.length === 0 && (
+                      <Typography variant="body2" color="textSecondary">
+                        Nenhuma ferramenta disponível.
+                      </Typography>
+                    )}
+                  </FormGroup>
+                </>
+              )}
+
+              <Divider style={{ margin: "12px 0" }} />
+
               <Field
                 as={TextField}
                 label="Marcador de transferência para humano"
@@ -166,7 +275,7 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
                 fullWidth
                 variant="outlined"
                 margin="dense"
-                helperText="Quando a resposta da IA contiver esse texto, o ticket é transferido e o marcador não é enviado ao cliente"
+                helperText="Quando a resposta da IA contiver esse texto, o ticket é transferido e o marcador não é enviado ao cliente. Além disso, frases comuns como 'quero falar com atendente' já disparam a transferência automaticamente, sem depender da IA."
               />
 
               <FormControl variant="outlined" margin="dense" fullWidth>
@@ -182,6 +291,19 @@ const AgentModal = ({ open, onClose, agentId, onSaved }) => {
                   ))}
                 </Field>
               </FormControl>
+
+              <Box mt={1}>
+                <FormControlLabel
+                  control={
+                    <Field as={Switch} type="checkbox" name="voiceReplies" color="primary" />
+                  }
+                  label="Responder por áudio (nota de voz) em vez de texto"
+                />
+                <Typography variant="caption" color="textSecondary" display="block">
+                  Melhor esforço: se a geração de voz falhar, a resposta cai automaticamente
+                  para texto.
+                </Typography>
+              </Box>
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={isSubmitting}>

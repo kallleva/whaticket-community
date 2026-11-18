@@ -43,9 +43,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   let ticket = await ShowTicketService(ticketId);
 
-  // Humano respondeu manualmente pelo painel: assume o ticket, o que já
-  // pausa o funil/agente de IA automaticamente (ambos só atuam enquanto
-  // `!ticket.userId`, ver handleWhatsappEvents.ts).
+  // Humano respondeu manualmente pelo painel: assume o ticket (se ainda não
+  // tinha dono) e, se um agente de IA estava conversando, ele para aqui —
+  // enviar uma mensagem é o que caracteriza o vendedor assumindo a conversa
+  // (só abrir/aceitar o ticket não pausa a IA).
   if (!ticket.userId) {
     await UpdateTicketService({
       ticketData: {
@@ -59,6 +60,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
       ticketId
     });
     ticket = await ShowTicketService(ticketId);
+  }
+
+  if (ticket.aiAgentId) {
+    await ticket.update({ aiAgentId: null, agentFallbackQueueId: null });
   }
 
   SetTicketMessagesAsRead(ticket);

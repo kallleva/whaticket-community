@@ -104,6 +104,16 @@ class Ticket extends Model<Ticket> {
   @BelongsTo(() => Agent)
   aiAgent: Agent;
 
+  // Fila escolhida no node "Transferir p/ Agente IA" que originou essa
+  // transferência — usada quando o agente encerra (pedido de humano) em
+  // vez da fila padrão cadastrada no Agente.
+  @ForeignKey(() => Queue)
+  @Column
+  agentFallbackQueueId: number;
+
+  @BelongsTo(() => Queue)
+  agentFallbackQueue: Queue;
+
   @HasMany(() => Message)
   messages: Message[];
 }

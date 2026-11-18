@@ -37,4 +37,4 @@ EXPOSE 3000
 ENTRYPOINT ["dumb-init", "--"]
 CMD dockerize -wait tcp://${DB_HOST}:3306 \
   && npx sequelize db:migrate \
-  && node dist/server.js
+  && exec node dist/server.js

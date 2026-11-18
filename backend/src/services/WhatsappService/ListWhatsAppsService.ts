@@ -8,6 +8,10 @@ const ListWhatsAppsService = async (): Promise<Whatsapp[]> => {
         model: Queue,
         as: "queues",
         attributes: ["id", "name", "color", "greetingMessage"]
+      },
+      {
+        association: "flow",
+        attributes: ["id", "name", "status"]
       }
     ]
   });

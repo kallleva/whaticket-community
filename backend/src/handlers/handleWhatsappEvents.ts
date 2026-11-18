@@ -28,6 +28,7 @@ import {
   getWaitingNodeType
 } from "../services/FlowServices/AdvanceFlowService";
 import EnqueueAiAgentTurnService from "../services/AgentServices/EnqueueAiAgentTurnService";
+import TranscribeAudioService from "../services/AgentServices/TranscribeAudioService";
 
 import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
@@ -326,12 +327,36 @@ export const handleMessage = async (
         ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
       };
 
+      // Corpo "efetivo" usado pelo funil/agente de IA/fila — para mensagens
+      // de texto é igual a processedMessage.body; para áudio/ptt, é a
+      // transcrição (o motor de funil e o agente de IA precisam entender o
+      // que a pessoa falou, não só saber que "chegou um áudio").
+      let effectiveBody = processedMessage.body;
+
       if (mediaPayload && processedMessage.hasMedia) {
         const filename = await saveMediaFile(mediaPayload);
         messageData.mediaUrl = filename;
-        messageData.body = processedMessage.body || filename;
         const [mediaType] = mediaPayload.mimetype.split("/");
         messageData.mediaType = mediaType;
+
+        if (
+          !processedMessage.fromMe &&
+          (processedMessage.type === "audio" || processedMessage.type === "ptt")
+        ) {
+          const transcript = await TranscribeAudioService(
+            mediaPayload.data,
+            mediaPayload.mimetype
+          );
+
+          if (transcript) {
+            effectiveBody = transcript;
+            messageData.body = `🎤 ${transcript}`;
+          } else {
+            messageData.body = processedMessage.body || filename;
+          }
+        } else {
+          messageData.body = processedMessage.body || filename;
+        }
       }
 
       let lastMessageText = "";
@@ -340,7 +365,7 @@ export const handleMessage = async (
           ? processedMessage.body
           : "Localization";
       } else {
-        lastMessageText = processedMessage.body || mediaPayload?.filename || "";
+        lastMessageText = effectiveBody || mediaPayload?.filename || "";
       }
 
       await ticket.update({ lastMessage: lastMessageText });
@@ -349,22 +374,25 @@ export const handleMessage = async (
 
       await processVcardMessage(processedMessage);
 
+      // Ticket com agente de IA ativo continua sendo respondido pelo agente
+      // mesmo estando atribuído a um vendedor — o agente só para quando ele
+      // mesmo transfere, ou quando o vendedor envia uma mensagem (ver
+      // MessageController.store).
       if (
-        !ticket.queue &&
         !contextPayload.groupContact &&
         !processedMessage.fromMe &&
-        !ticket.userId
+        (ticket.aiAgentId || (!ticket.queue && !ticket.userId))
       ) {
         const outcome = await processIncomingMessageForFlow(
           ticket,
           whatsapp,
-          processedMessage.body
+          effectiveBody
         );
 
         if (outcome === "skip" && whatsapp.queues.length >= 1) {
           await handleQueueLogic(
             contextPayload.whatsappId,
-            processedMessage.body,
+            effectiveBody,
             ticket,
             contactPayload
           );
